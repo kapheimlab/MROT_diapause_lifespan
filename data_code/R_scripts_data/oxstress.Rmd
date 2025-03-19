@@ -1,0 +1,121 @@
+---
+title: "mrot diapause - oxidative stress"
+author: "Karen M. Kapheim"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+This is an analysis of oxidative stress in newly emerged females who either 
+went through diapause or developed directly. We used protein carbonylation in 
+the thorax as a measure of oxidative stress.
+
+## Set-up
+
+```{r setup}
+library(tidyverse)
+library(nortest)
+library(car)
+library(lme4)
+library(ggsignif)
+```
+
+## Get data
+
+```{r data}
+oxstress <- read_csv("MROT_protcarb_bodysize_data.csv", 
+                     col_select = c(1:9), 
+                     col_names = TRUE,
+                     col_types = cols(
+                       Bee_ID = col_character(),
+                       Diapause_NonDiapause = col_character(), 
+                       Sex = col_character(), 
+                       Date_emerged = col_date("%m/%d/%y"), 
+                       Thorax_length_mm = col_double(), 
+                       Assay_number = col_character(), 
+                       C = col_double(), 
+                       P = col_double(), 
+                       CP = col_double()
+                     ))
+problems(oxstress)
+```
+
+## Summary stats
+
+```{r sum-1}
+hist(oxstress$CP)
+```
+
+```{r sum-2}
+oxstress %>% 
+  group_by(Diapause_NonDiapause) %>% 
+  summarise(mean_CP = mean(CP), 
+            se_CP = sd(CP)/sqrt(n()), 
+            mean_size = mean(Thorax_length_mm), 
+            se_size = sd(Thorax_length_mm)/sqrt(n()), 
+            n = n()
+            )
+```
+
+Diapausing females have 26% higher levels of protein carbonylation. 
+Diapausing females are also 4% larger than nondiapausing females.
+
+```{r sum-3}
+qqp(oxstress$CP, "norm")
+ad.test(oxstress$CP)
+```
+
+
+## Analysis
+
+```{r stats-1}
+m1 <- lmer(CP ~ Diapause_NonDiapause + Thorax_length_mm + (1|Assay_number), 
+           data = oxstress)
+summary(m1)
+Anova(m1)
+AIC(m1)
+```
+
+```{r stats-2}
+m0 <- lmer(CP ~ 0 + (1|Assay_number), data = oxstress)
+summary(m0)
+anova(m1, m0)
+```
+
+## Plot
+
+```{r plot}
+ggplot(oxstress, aes(x = Diapause_NonDiapause, y = CP, 
+                     fill = Diapause_NonDiapause)) + 
+  geom_boxplot(alpha = 0.8, outlier.color=NA) + 
+  geom_jitter(position = position_jitter(width = 0.20)) + 
+  geom_signif(data = oxstress, stat = "signif", position = "identity", 
+              comparisons = list(c("D", "ND")), map_signif_level = TRUE, 
+              annotations = "***", textsize = 8) + 
+  coord_cartesian(ylim = c(0.1, 0.7)) +
+  theme_classic() + 
+  scale_fill_manual(values = c("#94D2BD","#D84727")) + 
+  theme(legend.position = "none", 
+        axis.title=element_text(size=16), axis.text=element_text(size=14)) +
+  xlab("") + 
+  scale_x_discrete(labels = c("Diapause", "Non-diapause")) + 
+  ylab("Protein carbonyl / Total protein (nmol/mg)")
+ggsave("oxstress.png", width = 7, height = 5)
+```
+
+There is an outlier in the non-diapause group. This is MRE053. 
+It is extremely small, based on thorax width, and Addie had a note that the 
+protein precipitate was hardly visible for 53 and 54. Therefore, it is likely 
+that the CP value is exaggerated due to the very small amount of protein in 
+this individual due to its small size.
+
+
+## bookkeeping
+
+```{r books}
+sessionInfo()
+citation("tidyverse")
+citation("car")
+citation("nortest")
+citation("lme4")
+citation("ggsignif")
+```

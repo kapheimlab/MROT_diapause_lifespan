@@ -1,0 +1,283 @@
+---
+title: "mrot diapause - lifespan"
+author: "Karen M. Kapheim"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+This is analysis of the lifespan data for Megachile rotundata males & female 
+that either did or did not diapause. These samples were provided as incubating 
+cocoons from Lindsay McCabe (USDA PIRU).  
+
+We changed out the cage style after we had some death in the original cage 
+style. That is why there is a 'old_cage' variable. We want to see if the results
+change when we include bees that spent time in the original cage design.
+
+There were also some bees that had some discrepencies, missing data, or other 
+issues, so made a column that excludes them. 
+
+Thorax width was measured by Addie Lloyd in the Leica EZ Suite software. 
+
+The original (locked) data sheet and pictures are in the folder 
+'mrot_diapause_lifespan_immunity' on the KapheimLab google drive. 
+
+The original hard copy of the data is in Kapheim's office.
+
+# Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages}
+library(tidyverse)
+library(survival)
+library(survminer)
+library(ggfortify)
+```
+
+# Data
+
+```{r data-1}
+lifespan <- read_csv("MROT_lifespan_thorax_WorkingCopy.csv", 
+                     col_select = c(1:10), 
+                     col_names = TRUE,
+                     col_types = cols(
+                       Bee_ID = col_character(),
+                       Diapause_NonDiapause = col_character(), 
+                       Sex = col_character(), 
+                       Date_emerged = col_date("%m/%d/%y"), 
+                       Date_dead = col_date("%m/%d/%y"), 
+                       Date_frozen = col_date("%m/%d/%y"), 
+                       Thorax_length_mm = col_double(), 
+                       Notes = col_character(), 
+                       use_lifespan = col_character(), 
+                       old_cage_design = col_character()
+                     ))
+problems(lifespan)
+```
+
+#### Make some new variables
+
+We need a censor variable and a survival time.
+
+```{r data-2}
+lifespan <- lifespan %>% 
+  filter(!Bee_ID == "NA") %>% 
+  mutate(days_surv = as.numeric(Date_dead - Date_emerged), 
+         status = as.logical("TRUE"), 
+         combo = paste(Diapause_NonDiapause, Sex, sep = ""))
+table(lifespan$combo)
+lifespan$Diapause_NonDiapause = relevel(as.factor(lifespan$Diapause_NonDiapause), 
+                                        ref = "ND")
+```
+
+#### Filter datasets
+
+###### Only those without weird issues
+
+```{r data-3}
+lifespan.r <- lifespan %>% 
+  filter(use_lifespan == "Y")
+table(lifespan.r$combo)
+```
+
+###### Only those that spent whole life in new cage design
+
+```{r data-4}
+lifespan.r2 <- lifespan.r %>% 
+  filter(old_cage_design == "N")
+table(lifespan.r2$combo)
+```
+
+This eliminates most of the Diapause males. Maybe need to exclude males.
+
+###### Only females
+
+```{r data-5}
+lifespan.r2F <- lifespan.r2 %>% 
+  filter(Sex == "F")
+table(lifespan.r2F$combo)
+```
+
+# Survival Analysis
+
+
+#### Make a survival object
+
+```{r surv-1}
+km <- with(lifespan, Surv(days_surv, status))
+km.r <- with(lifespan.r, Surv(days_surv, status))
+km.r2 <- with(lifespan.r2, Surv(days_surv, status))
+km.r2F <- with(lifespan.r2F, Surv(days_surv, status))
+```
+
+#### Get the stats
+
+```{r surv-2}
+km_fit <- survfit(Surv(days_surv, status) ~ combo, data=lifespan)
+km_fit.r.combo <- survfit(Surv(days_surv, status) ~ combo, data=lifespan.r)
+km_fit.r2.combo <- survfit(Surv(days_surv, status) ~ combo, data=lifespan.r2)
+km_fit.r.DN <- survfit(Surv(days_surv, status) ~ Diapause_NonDiapause, 
+                       data=lifespan.r)
+km_fit.r2.DN <- survfit(Surv(days_surv, status) ~ Diapause_NonDiapause, 
+                       data=lifespan.r2)
+km_fit.r2F.DN <- survfit(Surv(days_surv, status) ~ Diapause_NonDiapause, 
+                       data=lifespan.r2F)
+km_fit.r.sex <- survfit(Surv(days_surv, status) ~ Sex, data=lifespan.r)
+
+km_fit.r2.sex <- survfit(Surv(days_surv, status) ~ Sex, data=lifespan.r2)
+```
+
+#### Plots
+
+###### All others
+
+```{r surv-3}
+# combo
+autoplot(km_fit.r.combo)
+ggsurvplot(km_fit.r.combo, data = lifespan.r, pval = TRUE)
+# diapause
+autoplot(km_fit.r.DN)
+ggsurvplot(km_fit.r.DN, data = lifespan.r, pval = TRUE)
+ggsurvplot(km_fit.r2.DN, data = lifespan.r2, pval = TRUE)
+# sex
+autoplot(km_fit.r.sex)
+ggsurvplot(km_fit.r.sex, data = lifespan.r, pval = TRUE)
+ggsurvplot(km_fit.r2.sex, data = lifespan.r2, pval = TRUE)
+```
+
+## Only females without issues
+
+#### Summary data 
+
+###### Min and max lifespan
+
+
+```{r surv-4}
+lifespan.r2F %>% 
+  group_by(Diapause_NonDiapause) %>% 
+  summarise(min = min(days_surv), 
+            max = max(days_surv), 
+            mean = mean(days_surv), 
+            median = median(days_surv),
+            sd = sd(days_surv),
+            se = sd(days_surv)/sqrt(n()),
+            n = n())
+
+lifespan.r2F %>% 
+  summarise(min = min(days_surv), 
+            max = max(days_surv), 
+            mean = mean(days_surv), 
+            median = median(days_surv),
+            sd = sd(days_surv),
+            se = sd(days_surv)/sqrt(n()),
+            n = n())
+```
+
+Min, Max, and Mean are similar, but median lifespan is 9 d longer (21%) for ND.
+
+#### Body size difference between D and ND
+```{r}
+plot(density(lifespan.r2F$Thorax_length_mm, na.rm = TRUE))
+shapiro.test(lifespan.r2F$Thorax_length_mm)
+
+lifespan.r2F %>% 
+  group_by(Diapause_NonDiapause) %>% 
+  summarise(min = min(Thorax_length_mm), 
+            max = max(Thorax_length_mm), 
+            mean = mean(Thorax_length_mm), 
+            median = median(Thorax_length_mm),
+            sd = sd(Thorax_length_mm),
+            se = sd(Thorax_length_mm)/sqrt(n()),
+            n = n())
+
+#Plot body size D vs ND
+ggplot(lifespan.r2F, aes(x = Diapause_NonDiapause, y = Thorax_length_mm, fill = Diapause_NonDiapause, )) +
+  geom_boxplot(alpha = 0.8, outlier.color=NA) +
+  geom_jitter(position = position_jitter(width = 0.20)) +
+  geom_signif(data = lifespan.r2F, stat = "signif", position = "identity", 
+              comparisons = list(c("D", "ND")), map_signif_level = TRUE, 
+              annotations = "***", textsize = 8) +
+  coord_cartesian(ylim = c(1.8, 3.1)) +
+  theme_classic() +
+  scale_fill_manual(values = c("#D84727","#94D2BD")) +
+  theme(legend.position = "none", 
+        axis.title=element_text(size=16), axis.text=element_text(size=14)) +
+  xlab("") + 
+  scale_x_discrete(labels = c("Non-Diapause", "Diapause")) + 
+  ylab("Intertegular Width (mm)")
+
+ggsave("body_size_thorax_lifespan.png", width = 7, height = 5)
+
+model <- lm(Thorax_length_mm ~ Diapause_NonDiapause, data = lifespan.r2F)
+summary(model)
+```
+#### Summary of the survival curve
+
+```{r surv-5}
+print(km_fit.r2F.DN)
+```
+
+###### Plot
+
+```{r surv-6}
+autoplot(km_fit.r2F.DN)
+ggsurvplot(km_fit.r2F.DN, data = lifespan.r2F, 
+           pval = TRUE, 
+           palette = c("#D84727", "#94D2BD"), 
+           conf.int = TRUE, 
+#           risk.table = "percentage", 
+#           risk.table.col = "strata", 
+           legend.title = "", 
+           legend.labs = c("Non-diapause", "Diapause"), 
+#           risk.table.height = 0.3, 
+           break.time.by = 10, 
+           xlab = "Time (days)", 
+           surv.median.line = "hv", 
+           font.x = c(14), 
+           font.y = c(14)
+           )
+ggsave("survival.png", height = 4, width = 6)
+```
+
+# Cox-Hazard models
+
+## All others
+
+```{r cox-1}
+# Fit a Cox proportional hazards model
+fit.coxph.r <- coxph(km.r ~ Diapause_NonDiapause + Sex + Thorax_length_mm, 
+                   data = as.data.frame(lifespan.r))
+ggforest(fit.coxph.r, data = as.data.frame(lifespan.r))
+
+```
+
+
+```{r cox-2}
+# Fit a Cox proportional hazards model
+fit.coxph.r2 <- coxph(km.r2 ~ Diapause_NonDiapause + Sex + Thorax_length_mm, 
+                   data = as.data.frame(lifespan.r2))
+ggforest(fit.coxph.r2, data = as.data.frame(lifespan.r2))
+
+```
+
+## Females only
+
+```{r cox-3}
+# Fit a Cox proportional hazards model
+fit.coxph.r2F <- coxph(km.r2F ~ Diapause_NonDiapause + Thorax_length_mm, 
+                   data = as.data.frame(lifespan.r2F))
+ggforest(fit.coxph.r2F, data = as.data.frame(lifespan.r2F), fontsize = 0.65)
+ggsave("hazards.svg", height = 4.5, width = 6.5)
+```
+
+## book-keeping
+
+```{r books}
+sessionInfo()
+citation("tidyverse")
+citation("survival")
+citation("survminer")
+citation("ggfortify")
+```

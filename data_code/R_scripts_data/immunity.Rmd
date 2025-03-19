@@ -1,0 +1,99 @@
+---
+title: "mrot diapause - immunity"
+author: "Karen M. Kapheim"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+## Set-up
+
+```{r}
+library(tidyverse)
+library(car)
+library(nortest)
+library(lme4)
+library(ggsignif)
+```
+
+## Data
+
+```{r data-1}
+immunity <- read_csv("Megachile_D_vs_ND_grey_values.csv", 
+                     col_select = c(1:5), 
+                     col_names = TRUE,
+                     col_types = cols(
+                       beeID = col_character(),
+                       avg_grey_value = col_double(), 
+                       treatment = col_character(), 
+                       sex = col_character(),
+                       thorax = col_double()
+                     ))
+problems(immunity)
+```
+
+#### Separate out just the females
+
+```{r data-2}
+immunity.f <- immunity %>% 
+  filter(sex == "F")
+```
+
+## Summarize
+
+```{r sum-1}
+
+plot(density(immunity.f$avg_grey_value))
+hist(immunity.f$avg_grey_value)
+immunity.f %>% 
+  group_by(treatment) %>% 
+  summarise(median = median(avg_grey_value), 
+            mean = mean(avg_grey_value), 
+            se = sd(avg_grey_value)/sqrt(n()), 
+            n = n())
+```
+## Statistical analysis
+
+```{r stats-1}
+qqp(immunity.f$avg_grey_value, "norm")
+shapiro.test(immunity.f$avg_grey_value)
+ad.test(immunity.f$avg_grey_value)
+leveneTest(avg_grey_value ~ treatment, data = immunity.f)
+```
+
+```{r stats-2}
+m1 <- lm(avg_grey_value ~ treatment + thorax, data = immunity.f)
+summary(m1)
+Anova(m1)
+```
+## plot
+
+```{r plot}
+ggplot(immunity.f, aes(x = treatment, y = avg_grey_value, 
+                     fill = treatment)) + 
+  geom_boxplot(alpha = 0.8, outlier.color=NA) + 
+  geom_jitter(position = position_jitter(width = 0.20)) + 
+  geom_signif(data = immunity.f, stat = "signif", position = "identity", 
+              comparisons = list(c("D", "ND")), map_signif_level = TRUE, 
+              annotations = "n.s.", textsize = 6) + 
+  coord_cartesian(ylim = c(0, 70)) +
+  theme_classic() + 
+  scale_fill_manual(values = c("#94D2BD","#D84727")) + 
+  theme(legend.position = "none", 
+        axis.title=element_text(size=16), axis.text=element_text(size=14)) +
+  xlab("") + 
+  scale_x_discrete(labels = c("Diapause", "Non-diapause")) + 
+  ylab("Average grey value")
+ggsave("immunity.png", width = 7, height = 5)
+```
+
+
+## bookkeeping
+
+```{r books}
+sessionInfo()
+citation("tidyverse")
+citation("car")
+citation("nortest")
+citation("lme4")
+citation("ggsignif")
+```

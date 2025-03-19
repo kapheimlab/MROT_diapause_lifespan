@@ -1,0 +1,115 @@
+---
+title: "RT-qPCR"
+output:
+  pdf_document: default
+  html_document: default
+date: "2024-07-08"
+---
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+```
+
+```{r include = FALSE}
+knitr::opts_chunk$set(fig.height = 12, fig.width = 8)
+```
+
+```{r}
+# Read the data from a CSV file
+data <- read.csv("rt_qpcr_R_input.csv")
+data
+```
+
+```{r}
+# Calculate the geometric mean of the reference genes for each sample
+data <- data %>%
+  mutate(Ref_mean = rowMeans(select(., RPL8, RPS18)))
+
+# Calculate deltaCt (deltaCt = Ct_target - Ct_reference_mean)
+data <- data %>%
+  mutate(Delta_Ct = PTTH - Ref_mean)
+
+# Calculate mean deltaCt for the control group
+mean_Delta_Ct_ND <- mean(data %>% filter(Treatment == "ND") %>% pull(Delta_Ct))
+
+# Calculate double DeltaCt (double DeltaCt = deltaCt_sample - mean_deltaCt_ND)
+data <- data %>%
+  mutate(Delta_Delta_Ct = Delta_Ct - mean_Delta_Ct_ND)
+
+# Calculate fold change
+data <- data %>%
+  mutate(Fold_Change = 2^(-Delta_Delta_Ct))
+data
+```
+
+```{r}
+# Perform a t-test to compare the treatment groups
+
+#F-test for equal variance (check the assumption that variance is equal between the two groups)
+ftest <- var.test(Delta_Ct ~ Treatment, data = data)
+ftest
+
+# One-tailed
+t_test1 <- t.test(Delta_Ct ~ Treatment, alternative = "less", var.equal = TRUE, data = data)
+t_test1
+
+# Two-tailed
+t_test2 <- t.test(Delta_Ct ~ Treatment, alternative = "two.sided", var.equal = TRUE, data = data)
+t_test2
+```
+
+```{r}
+# Plot the relative expression levels (fold change)
+
+#labs(title = "Fold Change of PTTH Expression",
+boxplot <- ggplot(data, aes(x=Treatment, y=Fold_Change, fill=Treatment)) + 
+  geom_boxplot(position = position_dodge(width = 0.75), alpha = 0.8, outlier.color=NA)+
+  geom_jitter(position = position_jitter(width = 0.20)) +
+  geom_signif(data = data, stat = "signif", position = "identity",
+comparisons = list(c("D", "ND")), map_signif_level = TRUE,
+annotations = "0.07", textsize = 6) +
+  coord_cartesian(ylim = c(0.5, 2.8)) +
+  theme_classic() +
+  scale_fill_manual(values = c("#94D2BD","#D84727")) +
+  theme(legend.position = "none", 
+        axis.title=element_text(size=16), axis.text=element_text(size=14)) +
+  xlab("") +
+  scale_x_discrete(labels = c("Diapause", "Non-diapause")) +
+  ylab("Fold Change (2^-ΔΔCt)")
+
+ggsave("RTqPCR_boxplot.png", width = 7, height = 5)
+
+# Calculate means and standard errors for the bar plot
+summary_data <- data %>%
+  group_by(Treatment) %>%
+  summarise(mean_Fold_Change = mean(Fold_Change), 
+            se_Fold_Change = sd(Fold_Change) / sqrt(n()))
+summary_data
+
+# Plot the bar plot with standard error bars
+barplot <- ggplot(summary_data, aes(x = Treatment, y = mean_Fold_Change, fill = Treatment)) +
+  geom_bar(stat = "identity", width = 0.5) + 
+  geom_errorbar(aes(ymin = mean_Fold_Change - se_Fold_Change, ymax = mean_Fold_Change +
+                    se_Fold_Change), width = 0.1) +
+  theme_classic() +
+  scale_fill_manual(values = c("#D84727", "#94D2BD")) +
+  theme(legend.position = "none",
+     axis.text.x = element_text(size = 14),
+     axis.text.y = element_text(size = 14)) +
+  xlab("") +
+  scale_x_discrete(labels = c("Diapause", "Non-diapause")) +
+  ylab("Fold Change (2^-ΔΔCt)")
+
+ggsave("RTqPCR_barplot.png")
+
+fig1 <- ggarrange(boxplot, barplot,
+                  nrow = 2, ncol = , widths = 7, heights = 14)
+fig1
+
+sessionInfo()
+citation("tidyverse")
+citation("ggplot2")
+citation("ggpubr")
+```
